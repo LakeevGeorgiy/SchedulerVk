@@ -23,13 +23,8 @@ public:
         };
     }
 
-    time_point GetTime() const {
-        return time_;
-    }
-
-    std::function<void()> GetTask() const {
-        return task_;
-    }
+    time_point GetTime() const;
+    std::function<void()> GetTask() const;
     
 };
 

@@ -5,43 +5,91 @@
 #include <condition_variable>
 #include <thread>
 #include <mutex>
+#include <memory>
 
 #include "Task.h"
-#include "ThreadPool.h"
 
+template <typename T>
+concept ThreadPoolConcept = requires(T pool, const std::function<void()>& arg) {
+    pool.Post(arg);
+    pool.Join();
+    pool.Stop();
+};
+
+template <ThreadPoolConcept ThreadPool>
 class Scheduler {
 private:
 
     bool stop_;
     bool enough_;
-    ThreadPool pool_;
-    std::mutex stop_mutex_;
+    std::unique_ptr<ThreadPool> pool_;
+    std::mutex mutex_;
     std::thread main_thread_;
-    std::mutex add_task_mutex_;
     std::priority_queue<Task, std::vector<Task>, std::greater<Task>> queue_;
-    std::condition_variable stop_conv_;  
-    std::condition_variable add_task_conv_;
 
 public:
 
-    Scheduler();
+    Scheduler(std::unique_ptr<ThreadPool>&& thread_pool)
+        : pool_(std::move(thread_pool))
+        , main_thread_(&Scheduler::Execute, this)
+        , stop_(false)
+        , enough_(false)
+        , queue_()
+    {}  
 
     template <typename ...Types>
     void Add(std::function<Types...> func, std::time_t time) {
         if (enough_) {
-            throw 1;
+            throw std::runtime_error("Can't add task after calling join method");
         }
-        std::unique_lock lock(stop_mutex_);
+        std::unique_lock lock(mutex_);
         queue_.emplace(func, time);
     }
 
-    ~Scheduler();
+    ~Scheduler() = default;
 
-    void Join();
+    void Join(){
+        enough_ = true;
+        if (main_thread_.joinable()) {
+            main_thread_.join();
+        }
+        pool_->Join();
+        pool_->Stop();
+    }
 
 
 private:
 
-    void Execute();
+    void Execute() {
+        while (!stop_) {
+
+            std::unique_lock<std::mutex> lock(mutex_);
+            
+            if (queue_.empty()) {
+                continue;
+            }
+
+            auto task = queue_.top();
+            auto now = std::chrono::system_clock::now();
+
+            if (task.GetTime() > now) {
+                continue;
+            }
+
+            queue_.pop();
+            
+            if (enough_ && queue_.empty()) {
+                stop_ = true;
+            }
+
+            lock.unlock();
+            
+            try {
+                pool_->Post(task.GetTask());
+            } catch (const std::exception& ex) {
+                std::cerr << "Task error: " << ex.what() << "\n";
+            }
+        }
+    }
 
 };

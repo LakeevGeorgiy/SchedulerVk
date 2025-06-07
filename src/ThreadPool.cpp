@@ -3,11 +3,20 @@
 #include "ThreadPool.h"
 
 ThreadPool::ThreadPool()
-    : ThreadPool(std::thread::hardware_concurrency()) {}
+    : ThreadPool(std::thread::hardware_concurrency()) 
+{}
 
 ThreadPool::ThreadPool(unsigned int threadNum) {
     for (unsigned int i = 0; i < threadNum; ++i) {
-        threads_.emplace_back(std::thread(&ThreadPool::threadLoop,this));
+        threads_.emplace_back(&ThreadPool::threadLoop,this);
+    }
+}
+
+ThreadPool::ThreadPool(ThreadPool &&other)
+    : jobs_(std::move(other.jobs_))
+{
+    for (size_t i = 0; i < threads_.size(); ++i) {
+        threads_[i] = std::thread(&ThreadPool::threadLoop, this);
     }
 }
 
@@ -24,13 +33,12 @@ void ThreadPool::threadLoop() {
             if (jobs_.empty()) {
                 joinMutexCondition_.notify_all();
             }
-            queueMutexCondition_.wait(lock, [this] {
+            queueMutexCondition_.wait(lock, [this] {;
                 return !jobs_.empty() || shouldTerminate_;
             });
             if (shouldTerminate_) {
                 return;
             }
-            std::cout << "tutu\n";
             job = jobs_.front();
             jobs_.pop();
         }

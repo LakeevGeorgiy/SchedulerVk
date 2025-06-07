@@ -13,6 +13,7 @@ class ThreadPool {
 public:
     ThreadPool();
     ThreadPool(unsigned int threadNum);
+    ThreadPool(ThreadPool&& other);
     ~ThreadPool();
 
     void Post(const std::function<void()>& job);
